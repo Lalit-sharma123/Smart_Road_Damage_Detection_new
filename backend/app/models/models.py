@@ -1,0 +1,248 @@
+import uuid
+from datetime import datetime, timezone
+from enum import Enum as PyEnum
+from typing import List, Optional
+
+from sqlalchemy import (
+    String, DateTime, Float, Integer, ForeignKey, Enum, Text, Boolean, JSON
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.database.database import Base
+
+
+class UserRole(str, PyEnum):
+    SUPER_ADMIN = "super_admin"
+    ADMIN = "admin"
+    OPERATOR = "operator"
+    INSPECTOR = "inspector"
+    VIEWER = "viewer"
+
+
+class CameraType(str, PyEnum):
+    CCTV = "cctv"
+    RTSP = "rtsp"
+    WEBCAM = "webcam"
+    DASHCAM = "dashcam"
+    DRONE = "drone"
+    MOBILE = "mobile"
+
+
+class CameraStatus(str, PyEnum):
+    ONLINE = "online"
+    OFFLINE = "offline"
+    BUSY = "busy"
+    MAINTENANCE = "maintenance"
+
+
+class ProcessingStatus(str, PyEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class DamageCategory(str, PyEnum):
+    POTHOLE = "pothole"
+    LONGITUDINAL_CRACK = "longitudinal_crack"
+    TRANSVERSE_CRACK = "transverse_crack"
+    ALLIGATOR_CRACK = "alligator_crack"
+    MISSING_ASPHALT = "missing_asphalt"
+    BROKEN_ROAD = "broken_road"
+
+
+class SeverityLevel(str, PyEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    username: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.INSPECTOR, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    videos: Mapped[List["Video"]] = relationship("Video", back_populates="uploader", cascade="all, delete-orphan")
+    reports: Mapped[List["Report"]] = relationship("Report", back_populates="creator")
+
+
+class Video(Base):
+    __tablename__ = "videos"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_path: Mapped[str] = mapped_column(Text, nullable=False)
+    processed_file_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    thumbnail_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    duration_seconds: Mapped[float] = mapped_column(Float, default=0.0)
+    total_frames: Mapped[int] = mapped_column(Integer, default=0)
+    fps: Mapped[float] = mapped_column(Float, default=30.0)
+    resolution: Mapped[str] = mapped_column(String(50), default="1920x1080")
+    status: Mapped[ProcessingStatus] = mapped_column(
+        Enum(ProcessingStatus), default=ProcessingStatus.PENDING, nullable=False
+    )
+    uploader_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    uploader: Mapped["User"] = relationship("User", back_populates="videos")
+    frames: Mapped[List["Frame"]] = relationship("Frame", back_populates="video", cascade="all, delete-orphan")
+    detections: Mapped[List["Detection"]] = relationship("Detection", back_populates="video", cascade="all, delete-orphan")
+    gps_tracks: Mapped[List["GPSData"]] = relationship("GPSData", back_populates="video", cascade="all, delete-orphan")
+    analytics: Mapped[Optional["RoadAnalytics"]] = relationship(
+        "RoadAnalytics", back_populates="video", uselist=False, cascade="all, delete-orphan"
+    )
+
+
+class Frame(Base):
+    __tablename__ = "frames"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    video_id: Mapped[str] = mapped_column(String(36), ForeignKey("videos.id", ondelete="CASCADE"), nullable=False)
+    frame_number: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    timestamp_seconds: Mapped[float] = mapped_column(Float, nullable=False)
+    image_path: Mapped[str] = mapped_column(Text, nullable=False)
+    has_damage: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    video: Mapped["Video"] = relationship("Video", back_populates="frames")
+    detections: Mapped[List["Detection"]] = relationship("Detection", back_populates="frame", cascade="all, delete-orphan")
+
+
+class Detection(Base):
+    __tablename__ = "detections"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    video_id: Mapped[str] = mapped_column(String(36), ForeignKey("videos.id", ondelete="CASCADE"), nullable=False)
+    frame_id: Mapped[str] = mapped_column(String(36), ForeignKey("frames.id", ondelete="CASCADE"), nullable=False)
+    category: Mapped[DamageCategory] = mapped_column(Enum(DamageCategory), nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    
+    # Bounding Box Coordinates (Normalized 0.0 - 1.0 or pixel relative)
+    x_min: Mapped[float] = mapped_column(Float, nullable=False)
+    y_min: Mapped[float] = mapped_column(Float, nullable=False)
+    x_max: Mapped[float] = mapped_column(Float, nullable=False)
+    y_max: Mapped[float] = mapped_column(Float, nullable=False)
+    area_pixels: Mapped[float] = mapped_column(Float, nullable=False)
+    
+    severity: Mapped[SeverityLevel] = mapped_column(Enum(SeverityLevel), nullable=False)
+    severity_score: Mapped[float] = mapped_column(Float, nullable=False)
+
+    video: Mapped["Video"] = relationship("Video", back_populates="detections")
+    frame: Mapped["Frame"] = relationship("Frame", back_populates="detections")
+
+
+class GPSData(Base):
+    __tablename__ = "gps_data"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    video_id: Mapped[str] = mapped_column(String(36), ForeignKey("videos.id", ondelete="CASCADE"), nullable=False)
+    frame_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    latitude: Mapped[float] = mapped_column(Float, nullable=False)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    altitude_meters: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    speed_kmh: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    road_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    video: Mapped["Video"] = relationship("Video", back_populates="gps_tracks")
+
+
+class RoadAnalytics(Base):
+    __tablename__ = "road_analytics"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    video_id: Mapped[str] = mapped_column(String(36), ForeignKey("videos.id", ondelete="CASCADE"), nullable=False, unique=True)
+    road_health_score: Mapped[float] = mapped_column(Float, nullable=False)  # 0 to 100
+    total_detections: Mapped[int] = mapped_column(Integer, default=0)
+    pothole_count: Mapped[int] = mapped_column(Integer, default=0)
+    crack_count: Mapped[int] = mapped_column(Integer, default=0)
+    critical_count: Mapped[int] = mapped_column(Integer, default=0)
+    damage_density_per_km: Mapped[float] = mapped_column(Float, default=0.0)
+    overall_severity: Mapped[SeverityLevel] = mapped_column(Enum(SeverityLevel), default=SeverityLevel.LOW)
+    summary_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+    video: Mapped["Video"] = relationship("Video", back_populates="analytics")
+
+
+class Report(Base):
+    __tablename__ = "reports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    report_type: Mapped[str] = mapped_column(String(50), nullable=False)  # PDF, CSV, Excel
+    file_path: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    creator: Mapped[Optional["User"]] = relationship("User", back_populates="reports")
+
+
+class Camera(Base):
+    __tablename__ = "cameras"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    camera_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    camera_type: Mapped[CameraType] = mapped_column(Enum(CameraType), default=CameraType.CCTV, nullable=False)
+    stream_url: Mapped[str] = mapped_column(Text, nullable=False)
+    latitude: Mapped[float] = mapped_column(Float, default=0.0)
+    longitude: Mapped[float] = mapped_column(Float, default=0.0)
+    location_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    fps: Mapped[float] = mapped_column(Float, default=30.0)
+    resolution: Mapped[str] = mapped_column(String(50), default="1920x1080")
+    status: Mapped[CameraStatus] = mapped_column(Enum(CameraStatus), default=CameraStatus.OFFLINE, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+    last_connected: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AIModel(Base):
+    __tablename__ = "ai_models"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    model_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    version: Mapped[str] = mapped_column(String(50), default="v1.0")
+    model_type: Mapped[str] = mapped_column(String(50), default="YOLOv11")
+    classes_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    accuracy: Mapped[float] = mapped_column(Float, default=0.92)
+    map_score: Mapped[float] = mapped_column(Float, default=0.88)
+    status: Mapped[str] = mapped_column(String(50), default="ready")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    file_path: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    action: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(String(100), default="SYSTEM")
+    details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    user_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+

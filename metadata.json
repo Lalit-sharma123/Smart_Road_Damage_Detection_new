@@ -1,0 +1,6 @@
+{
+  "name": "Smart Road Damage Detection and Analysis System",
+  "description": "AI-powered computer vision and analytics platform for road damage inspection, severity scoring, GPS tracking, and automated reporting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
