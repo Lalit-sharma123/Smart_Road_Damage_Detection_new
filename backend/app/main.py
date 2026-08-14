@@ -1,8 +1,9 @@
+import os
 import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config.config import settings
@@ -71,6 +72,16 @@ app.add_middleware(
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next):
     start_time = time.time()
+    req_path = request.url.path
+    # Intercept requests for media files located in upload/processed directories
+    if "/uploads/" in req_path or "/processed/" in req_path:
+        filename = os.path.basename(req_path)
+        upload_cand = os.path.join(settings.UPLOAD_DIR, filename)
+        processed_cand = os.path.join(settings.PROCESSED_DIR, filename)
+        if os.path.exists(upload_cand) and os.path.isfile(upload_cand):
+            return FileResponse(upload_cand)
+        if os.path.exists(processed_cand) and os.path.isfile(processed_cand):
+            return FileResponse(processed_cand)
     response = await call_next(request)
     process_time = time.time() - start_time
     response.headers["X-Process-Time"] = f"{process_time:.4f}s"

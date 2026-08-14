@@ -149,6 +149,7 @@ async def execute_video_processing_task(
                 )
 
                 has_damage = len(raw_detections) > 0
+                frame_detections = []
 
                 # DB Frame and Detection persistence
                 try:
