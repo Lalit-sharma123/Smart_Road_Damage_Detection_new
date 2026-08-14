@@ -77,6 +77,40 @@ async def add_process_time_header(request: Request, call_next):
     return response
 
 
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
+
+# Global Database Exception Handlers
+@app.exception_handler(IntegrityError)
+async def integrity_exception_handler(request: Request, exc: IntegrityError):
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={
+            "status": "error",
+            "error_type": "DatabaseIntegrityError",
+            "message": "Database constraint violation or duplicate record.",
+            "detail": str(exc.orig) if hasattr(exc, "orig") else str(exc),
+            "path": request.url.path
+        },
+    )
+
+
+@app.exception_handler(SQLAlchemyError)
+async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
+    err_str = str(exc)
+    # Catch UndefinedColumn or schema mismatch errors gracefully
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY if "undefined" in err_str.lower() or "column" in err_str.lower() else status.HTTP_400_BAD_REQUEST
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "error",
+            "error_type": "DatabaseQueryError",
+            "message": "A database query or schema alignment exception occurred.",
+            "detail": str(exc.orig) if hasattr(exc, "orig") else str(exc),
+            "path": request.url.path
+        },
+    )
+
+
 # Global Exception Handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
