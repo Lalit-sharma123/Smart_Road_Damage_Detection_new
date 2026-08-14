@@ -65,6 +65,8 @@ class AIModelBase(BaseModel):
     map_score: float = 0.88
     status: str = "ready"
 
+    model_config = ConfigDict(protected_namespaces=())
+
 
 class AIModelCreate(AIModelBase):
     file_path: str = "backend/weights/yolov11x-road.pt"
@@ -242,11 +244,13 @@ class VideoDetailResponse(VideoUploadResponse):
 
 
 class ProcessVideoRequest(BaseModel):
-    video_id: str
-    confidence_threshold: float = Field(0.35, ge=0.1, le=0.95)
-    frame_skip: int = Field(5, ge=1, le=30)
-    enable_histogram_equalization: bool = True
-    enable_gaussian_blur: bool = True
+    video_id: Optional[str] = Field(None, alias="videoId")
+    confidence_threshold: Optional[float] = Field(0.35, alias="confidence")
+    frame_skip: Optional[int] = Field(5, alias="frameSkip")
+    enable_histogram_equalization: Optional[bool] = True
+    enable_gaussian_blur: Optional[bool] = True
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
 
 class ProcessVideoResponse(BaseModel):

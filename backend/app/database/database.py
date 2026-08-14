@@ -65,19 +65,16 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     Guarantees automatic session cleanup, rollback on errors, and resilient connection fallback.
     """
     global AsyncSessionLocal
-    session = AsyncSessionLocal()
-    try:
-        yield session
-        await session.commit()
-    except Exception as e:
-        await session.rollback()
-        # If connection failed due to PostgreSQL auth / network error, switch to SQLite
-        err_msg = str(e).lower()
-        if "password authentication failed" in err_msg or "connection refused" in err_msg or "cannot connect" in err_msg:
-            _switch_to_sqlite()
-        raise
-    finally:
-        await session.close()
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        except Exception as e:
+            await session.rollback()
+            # If connection failed due to PostgreSQL auth / network error, switch to SQLite
+            err_msg = str(e).lower()
+            if "password authentication failed" in err_msg or "connection refused" in err_msg or "cannot connect" in err_msg:
+                _switch_to_sqlite()
+            raise
 
 
 async def ensure_schema_alignment(conn) -> None:

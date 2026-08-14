@@ -469,8 +469,37 @@ export const LiveProcessing: React.FC<LiveProcessingProps> = ({
 
     wsRef.current = ws;
 
+    // Fallback polling interval to guarantee status updates if WebSocket misses a packet
+    const pollInterval = setInterval(async () => {
+      if (!videoId) return;
+      try {
+        const details = await videoService.getVideoDetails(videoId);
+        if (details.status === 'completed') {
+          setProgress(100);
+          setStatusText('YOLO Frame Processing Completed! Navigating to full analytics report...');
+          clearInterval(pollInterval);
+          if (onProcessingComplete) onProcessingComplete(details);
+          setTimeout(() => onNavigate('results'), 1500);
+        } else if (details.status === 'failed') {
+          setStatusText('Video processing encountered an error.');
+          clearInterval(pollInterval);
+        } else {
+          // Check global progress endpoint if available
+          const statusRes = await apiClient.get('/process/status').catch(() => null);
+          if (statusRes && statusRes.data && statusRes.data.is_processing) {
+            setProgress(statusRes.data.progress_percent || 50);
+            if (statusRes.data.status) setStatusText(statusRes.data.status);
+            if (statusRes.data.current_fps) setFps(statusRes.data.current_fps);
+          }
+        }
+      } catch (pollErr) {
+        // Silent catch for polling
+      }
+    }, 2500);
+
     return () => {
       if (wsRef.current) wsRef.current.close();
+      clearInterval(pollInterval);
     };
   }, [videoId]);
 
