@@ -395,14 +395,31 @@ export const LiveProcessing: React.FC<LiveProcessingProps> = ({
             mapRef.current.panTo([frameLat, frameLng], { animate: true });
           }
 
+          // Authoritative counts from backend if present
+          if (msg.counts) {
+            if (typeof msg.counts.pothole === 'number') setPotholeCount(msg.counts.pothole);
+            if (typeof msg.counts.crack === 'number') setCrackCount(msg.counts.crack);
+            if (typeof msg.counts.broken_road === 'number') setBrokenRoadCount(msg.counts.broken_road);
+            if (typeof msg.counts.missing_asphalt === 'number') setMissingAsphaltCount(msg.counts.missing_asphalt);
+            if (typeof msg.counts.road_damage === 'number') setRoadDamageCount(msg.counts.road_damage);
+            if (typeof msg.counts.vehicle === 'number') setVehicleCount(msg.counts.vehicle);
+            if (typeof msg.counts.helmet === 'number') setHelmetCount(msg.counts.helmet);
+            if (typeof msg.counts.number_plate === 'number') setNumberPlateCount(msg.counts.number_plate);
+          }
+
           // Handle incoming detections on frame
           if (Array.isArray(msg.detections) && msg.detections.length > 0) {
             const newItems: LiveDetectionItem[] = msg.detections.map((d: any, idx: number) => {
               const cat = (d.category || 'damage').toLowerCase();
-              if (cat.includes('pothole')) setPotholeCount((c) => c + 1);
-              else if (cat.includes('crack')) setCrackCount((c) => c + 1);
-              else if (cat.includes('broken')) setBrokenRoadCount((c) => c + 1);
-              else if (cat.includes('asphalt')) setMissingAsphaltCount((c) => c + 1);
+              if (!msg.counts) {
+                if (cat.includes('pothole')) setPotholeCount((c) => c + 1);
+                else if (cat.includes('crack')) setCrackCount((c) => c + 1);
+                else if (cat.includes('broken')) setBrokenRoadCount((c) => c + 1);
+                else if (cat.includes('asphalt')) setMissingAsphaltCount((c) => c + 1);
+                if (cat.includes('car') || cat.includes('truck') || cat.includes('vehicle')) setVehicleCount((c) => c + 1);
+                if (cat.includes('helmet')) setHelmetCount((c) => c + 1);
+                if (cat.includes('plate')) setNumberPlateCount((c) => c + 1);
+              }
 
               const sev = d.severity || 'HIGH';
               const markerColor = getSeverityColor(sev);
@@ -441,7 +458,7 @@ export const LiveProcessing: React.FC<LiveProcessingProps> = ({
               };
             });
 
-            setTimelineEvents((prev) => [...newItems, ...prev]);
+            setTimelineEvents((prev) => [...newItems, ...prev.slice(0, 49)]);
           }
         }
 

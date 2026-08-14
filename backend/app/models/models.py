@@ -130,7 +130,7 @@ class Detection(Base):
     frame_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("frames.id", ondelete="CASCADE"), nullable=True)
     frame_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     timestamp_seconds: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    category: Mapped[DamageCategory] = mapped_column(Enum(DamageCategory), nullable=False)
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     
     # Bounding Box Coordinates
@@ -140,7 +140,7 @@ class Detection(Base):
     y_max: Mapped[float] = mapped_column(Float, nullable=False)
     area_pixels: Mapped[float] = mapped_column(Float, default=0.0)
     
-    severity: Mapped[SeverityLevel] = mapped_column(Enum(SeverityLevel), default=SeverityLevel.LOW, nullable=False)
+    severity: Mapped[str] = mapped_column(String(50), default="low", nullable=False)
     severity_score: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
     distance_meters: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)

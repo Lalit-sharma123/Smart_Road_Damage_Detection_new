@@ -190,14 +190,15 @@ async def ensure_schema_alignment(conn) -> None:
                             print(f"🔧 [PostgreSQL Auto-Migration] Added column '{col_name}' to '{table_name}'")
                         else:
                             curr_type, udt_type = col_info[col_lower]
-                            # Detect data type mismatches for string UUIDs (e.g. camera_id, video_id, frame_id, uploader_id)
-                            if "varchar" in pg_ddl.lower() and ("int" in curr_type or "int" in udt_type or "numeric" in curr_type):
+                            # Detect data type mismatches for string UUIDs (e.g. camera_id, video_id, frame_id, uploader_id) and enums
+                            if "varchar" in pg_ddl.lower() and ("int" in curr_type or "int" in udt_type or "numeric" in curr_type or "user-defined" in curr_type or curr_type == "user-defined"):
                                 try:
                                     # Drop default if any
                                     await conn.execute(text(f"ALTER TABLE {table_name} ALTER COLUMN {col_name} DROP DEFAULT"))
-                                    # Alter column type to VARCHAR(36)
-                                    await conn.execute(text(f"ALTER TABLE {table_name} ALTER COLUMN {col_name} TYPE VARCHAR(36) USING {col_name}::VARCHAR"))
-                                    print(f"🔧 [PostgreSQL Auto-Migration] Converted '{table_name}.{col_name}' from {curr_type} to VARCHAR(36)")
+                                    # Alter column type to VARCHAR
+                                    col_len = "50" if ("category" in col_name or "severity" in col_name) else "36"
+                                    await conn.execute(text(f"ALTER TABLE {table_name} ALTER COLUMN {col_name} TYPE VARCHAR({col_len}) USING {col_name}::VARCHAR"))
+                                    print(f"🔧 [PostgreSQL Auto-Migration] Converted '{table_name}.{col_name}' from {curr_type}/{udt_type} to VARCHAR({col_len})")
                                 except Exception as type_err:
                                     print(f"⚠️ Note migrating {table_name}.{col_name} type: {type_err}")
             else:

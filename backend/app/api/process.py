@@ -139,10 +139,20 @@ async def execute_video_processing_task(
 
             total_expected_frames = processor.total_frames or 100
 
+            # Category tracking counters
+            pothole_count = 0
+            crack_count = 0
+            broken_road_count = 0
+            missing_asphalt_count = 0
+            road_damage_count = 0
+            vehicle_count = 0
+            helmet_count = 0
+            number_plate_count = 0
+
             for frame_num, timestamp_sec, raw_frame, preprocessed_frame in frame_gen:
                 frames_processed_count += 1
 
-                # YOLO detection on preprocessed frame
+                # Multi-Model YOLO detection on preprocessed frame (Damage, Vehicles, Helmets, Plates)
                 raw_detections = detector_instance.detect(
                     preprocessed_frame,
                     conf_threshold=confidence_threshold
@@ -150,6 +160,63 @@ async def execute_video_processing_task(
 
                 has_damage = len(raw_detections) > 0
                 frame_detections = []
+
+                for det in raw_detections:
+                    sev_level, sev_score = SeverityAnalysisService.calculate_detection_severity(
+                        det,
+                        frame_width=processor.width,
+                        frame_height=processor.height,
+                        cluster_count=len(raw_detections)
+                    )
+
+                    cat_raw = str(det.get("category", "pothole")).strip().lower()
+                    det_type = det.get("type", "damage")
+
+                    # Update live multi-model counters
+                    if "pothole" in cat_raw:
+                        pothole_count += 1
+                        road_damage_count += 1
+                    elif "crack" in cat_raw:
+                        crack_count += 1
+                        road_damage_count += 1
+                    elif "broken" in cat_raw:
+                        broken_road_count += 1
+                        road_damage_count += 1
+                    elif "asphalt" in cat_raw:
+                        missing_asphalt_count += 1
+                        road_damage_count += 1
+                    elif det_type == "damage":
+                        road_damage_count += 1
+
+                    if cat_raw in ["car", "truck", "bus", "motorcycle", "bicycle", "person", "vehicle"] or det_type == "vehicle":
+                        vehicle_count += 1
+                    if "helmet" in cat_raw:
+                        helmet_count += 1
+                    if "plate" in cat_raw or "number_plate" in cat_raw or "license" in cat_raw:
+                        number_plate_count += 1
+
+                    distance_est = SeverityAnalysisService.estimate_perspective_distance(
+                        det,
+                        frame_height=processor.height
+                    )
+
+                    base_lat = 28.4595 + (frame_num * 0.00008)
+                    base_lon = 77.0266 + (frame_num * 0.00009)
+
+                    det_record = {
+                        "category": cat_raw,
+                        "type": det_type,
+                        "confidence": float(det["confidence"]),
+                        "severity": sev_level.value if hasattr(sev_level, "value") else str(sev_level),
+                        "severity_score": float(sev_score),
+                        "x_min": float(det["x_min"]),
+                        "y_min": float(det["y_min"]),
+                        "x_max": float(det["x_max"]),
+                        "y_max": float(det["y_max"]),
+                        "distance_meters": distance_est
+                    }
+                    frame_detections.append(det_record)
+                    all_detections_list.append(det_record)
 
                 # DB Frame and Detection persistence
                 try:
@@ -163,122 +230,83 @@ async def execute_video_processing_task(
                     db.add(db_frame)
                     await db.flush()
 
-                    for det in raw_detections:
-                        sev_level, sev_score = SeverityAnalysisService.calculate_detection_severity(
-                            det,
-                            frame_width=processor.width,
-                            frame_height=processor.height,
-                            cluster_count=len(raw_detections)
-                        )
-
-                        cat_val = det["category"]
-                        if hasattr(cat_val, "value"):
-                            cat_enum = cat_val
-                        else:
-                            try:
-                                cat_enum = DamageCategory(cat_val)
-                            except ValueError:
-                                cat_enum = DamageCategory.POTHOLE
-
-                        distance_est = SeverityAnalysisService.estimate_perspective_distance(
-                            det,
-                            frame_height=processor.height
-                        )
-
+                    for d_rec in frame_detections:
                         base_lat = 28.4595 + (frame_num * 0.00008)
                         base_lon = 77.0266 + (frame_num * 0.00009)
-
                         db_detection = Detection(
                             video_id=video.id,
                             camera_id=None,
                             frame_id=db_frame.id,
                             frame_number=frame_num,
                             timestamp_seconds=timestamp_sec,
-                            category=cat_enum,
-                            confidence=det["confidence"],
-                            x_min=det["x_min"],
-                            y_min=det["y_min"],
-                            x_max=det["x_max"],
-                            y_max=det["y_max"],
-                            area_pixels=det["area_pixels"],
-                            severity=sev_level,
-                            severity_score=sev_score,
-                            distance_meters=distance_est,
+                            category=d_rec["category"],
+                            confidence=d_rec["confidence"],
+                            x_min=d_rec["x_min"],
+                            y_min=d_rec["y_min"],
+                            x_max=d_rec["x_max"],
+                            y_max=d_rec["y_max"],
+                            area_pixels=float((d_rec["x_max"] - d_rec["x_min"]) * (d_rec["y_max"] - d_rec["y_min"])),
+                            severity=d_rec["severity"],
+                            severity_score=d_rec["severity_score"],
+                            distance_meters=d_rec["distance_meters"],
                             latitude=base_lat,
                             longitude=base_lon
                         )
                         db.add(db_detection)
-
-                        det_record = {
-                            "category": cat_enum.value,
-                            "confidence": det["confidence"],
-                            "severity": sev_level.value,
-                            "severity_score": sev_score,
-                            "x_min": det["x_min"],
-                            "y_min": det["y_min"],
-                            "x_max": det["x_max"],
-                            "y_max": det["y_max"],
-                            "distance_meters": distance_est
-                        }
-                        frame_detections.append(det_record)
-                        all_detections_list.append(det_record)
                 except Exception as db_err:
                     print(f"⚠️ [Frame Persistence Warning]: {db_err}")
-                    # Still record in memory for video report & telemetry
-                    for det in raw_detections:
-                        sev_level, sev_score = SeverityAnalysisService.calculate_detection_severity(
-                            det,
-                            frame_width=processor.width,
-                            frame_height=processor.height,
-                            cluster_count=len(raw_detections)
-                        )
-                        cat_val = det.get("category", "POTHOLE")
-                        cat_str = cat_val.value if hasattr(cat_val, "value") else str(cat_val)
-                        distance_est = SeverityAnalysisService.estimate_perspective_distance(
-                            det,
-                            frame_height=processor.height
-                        )
-                        det_record = {
-                            "category": cat_str,
-                            "confidence": det["confidence"],
-                            "severity": sev_level.value,
-                            "severity_score": sev_score,
-                            "x_min": det["x_min"],
-                            "y_min": det["y_min"],
-                            "x_max": det["x_max"],
-                            "y_max": det["y_max"],
-                            "distance_meters": distance_est
-                        }
-                        frame_detections.append(det_record)
-                        all_detections_list.append(det_record)
 
-                # Annotate Frame with bounding boxes
+                # Annotate Frame with high-contrast color-coded bounding boxes
                 annotated_img = raw_frame.copy()
                 for d in frame_detections:
-                    color = (0, 0, 255) if d["severity"] == "critical" else (0, 165, 255) if d["severity"] == "high" else (0, 255, 0)
-                    cv2.rectangle(
-                        annotated_img,
-                        (int(d["x_min"]), int(d["y_min"])),
-                        (int(d["x_max"]), int(d["y_max"])),
-                        color,
-                        2
-                    )
-                    label = f"{d['category']} {int(d['confidence']*100)}%"
+                    cat_name = d["category"].lower()
+                    d_type = d.get("type", "damage")
+
+                    # Distinct BGR color coding
+                    if "pothole" in cat_name:
+                        box_color = (0, 0, 255)  # Bright Red
+                    elif "crack" in cat_name or "broken" in cat_name or "asphalt" in cat_name or d_type == "damage":
+                        box_color = (0, 140, 255)  # Vivid Orange
+                    elif cat_name in ["car", "truck", "bus", "motorcycle", "bicycle", "person", "vehicle"] or d_type == "vehicle":
+                        box_color = (255, 120, 0)  # Neon Cyan/Blue
+                    elif "helmet" in cat_name:
+                        box_color = (0, 215, 255)  # Gold / Yellow
+                    elif "plate" in cat_name or "number_plate" in cat_name:
+                        box_color = (0, 255, 0)  # Emerald Green
+                    else:
+                        box_color = (0, 255, 255)
+
+                    x1, y1 = max(0, int(d["x_min"])), max(0, int(d["y_min"]))
+                    x2, y2 = min(processor.width, int(d["x_max"])), min(processor.height, int(d["y_max"]))
+
+                    # Draw bounding box
+                    cv2.rectangle(annotated_img, (x1, y1), (x2, y2), box_color, 2)
+
+                    # Draw label badge with solid background
+                    display_cat = d["category"].replace("_", " ").upper()
+                    label_text = f"{display_cat} {int(d['confidence'] * 100)}%"
+                    (tw, th), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+                    badge_y1 = max(0, y1 - th - 6)
+                    badge_y2 = y1
+                    badge_x2 = min(processor.width, x1 + tw + 8)
+
+                    cv2.rectangle(annotated_img, (x1, badge_y1), (badge_x2, badge_y2), box_color, -1)
                     cv2.putText(
                         annotated_img,
-                        label,
-                        (int(d["x_min"]), max(15, int(d["y_min"]) - 5)),
+                        label_text,
+                        (x1 + 4, max(th + 2, badge_y2 - 3)),
                         cv2.FONT_HERSHEY_SIMPLEX,
-                        0.5,
-                        color,
-                        2
+                        0.45,
+                        (255, 255, 255) if box_color != (0, 215, 255) else (0, 0, 0),
+                        1,
+                        cv2.LINE_AA
                     )
 
                 if video_writer:
                     video_writer.write(annotated_img)
 
                 # Encode Frame to Base64 for Live UI Stream
-                _, buffer = cv2.imencode('.jpg', annotated_img, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                _, buffer = cv2.imencode('.jpg', annotated_img, [cv2.IMWRITE_JPEG_QUALITY, 75])
                 base64_str = base64.b64encode(buffer).decode('utf-8')
                 frame_base64 = f"data:image/jpeg;base64,{base64_str}"
 
@@ -286,6 +314,7 @@ async def execute_video_processing_task(
                 for det in frame_detections:
                     formatted_detections.append({
                         "category": det["category"],
+                        "type": det.get("type", "damage"),
                         "confidence": round(float(det["confidence"]), 2),
                         "severity": det["severity"].upper(),
                         "x_min": int(det["x_min"]),
@@ -296,12 +325,14 @@ async def execute_video_processing_task(
 
                 base_lat = 28.4595 + (frame_num * 0.00008)
                 base_lon = 77.0266 + (frame_num * 0.00009)
-                live_road_health = round(max(20.0, 100.0 - (len(all_detections_list) * 3.5)), 1)
+                current_progress = min(98, max(5, int((frames_processed_count / max(1, total_expected_frames / max(1, frame_skip))) * 95)))
+                live_road_health = round(max(20.0, 100.0 - (road_damage_count * 4.0)), 1)
 
                 ws_frame_msg = {
                     "type": "frame",
                     "video_id": video.id,
                     "frame_number": frame_num,
+                    "total_frames": total_expected_frames,
                     "timestamp": round(float(timestamp_sec), 2),
                     "elapsed_time": round(float(timestamp_sec), 2),
                     "fps": round(float(processor.fps or 30.0), 1),
@@ -314,13 +345,26 @@ async def execute_video_processing_task(
                         "latitude": round(base_lat, 6),
                         "longitude": round(base_lon, 6)
                     },
-                    "detections": formatted_detections
+                    "detections": formatted_detections,
+                    "counts": {
+                        "pothole": pothole_count,
+                        "crack": crack_count,
+                        "broken_road": broken_road_count,
+                        "missing_asphalt": missing_asphalt_count,
+                        "road_damage": road_damage_count,
+                        "vehicle": vehicle_count,
+                        "helmet": helmet_count,
+                        "number_plate": number_plate_count,
+                        "total": len(all_detections_list)
+                    }
                 }
                 await ws_manager.broadcast(ws_frame_msg)
                 await ws_broadcaster.broadcast(ws_frame_msg)
 
                 del annotated_img, raw_frame, preprocessed_frame, buffer
-                await asyncio.sleep(0.01)
+                # Natural playback pacing for real-time visualization
+                frame_delay = max(0.02, min(0.05, 0.8 / max(processor.fps or 30.0, 1.0)))
+                await asyncio.sleep(frame_delay)
 
             if video_writer:
                 video_writer.release()
