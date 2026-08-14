@@ -153,3 +153,21 @@ class SeverityAnalysisService:
             "critical_count": critical_count,
             "damage_density_per_km": damage_density
         }
+
+    @classmethod
+    def estimate_perspective_distance(
+        cls,
+        detection: Dict[str, Any],
+        frame_height: int = 720
+    ) -> float:
+        """
+        Estimates perspective distance in meters based on bounding box vertical position.
+        Lower Y coordinate (closer to horizon/top of road view) = farther away.
+        Higher Y coordinate (near bottom of image/vehicle bumper) = close proximity.
+        """
+        y_max = float(detection.get("y_max", frame_height * 0.8))
+        norm_y = min(1.0, max(0.1, y_max / max(1, frame_height)))
+        
+        # Approximate distance formula (50m at horizon, 3m at vehicle bumper)
+        estimated_dist = 3.0 + (1.0 - norm_y) * 47.0
+        return round(float(estimated_dist), 1)

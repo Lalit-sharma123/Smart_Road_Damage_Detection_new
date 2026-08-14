@@ -110,7 +110,14 @@ async def get_video_details(
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieve complete metadata, processing state, and analytics for a video."""
-    stmt = select(Video).where(Video.id == video_id)
+    stmt = (
+        select(Video)
+        .options(
+            selectinload(Video.analytics),
+            selectinload(Video.gps_tracks)
+        )
+        .where(Video.id == video_id)
+    )
     video = (await db.execute(stmt)).scalar_one_or_none()
     
     if not video:
