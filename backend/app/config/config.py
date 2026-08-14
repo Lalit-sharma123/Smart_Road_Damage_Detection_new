@@ -1,6 +1,12 @@
 import os
+from pathlib import Path
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Base directories using pathlib
+# __file__ is /backend/app/config/config.py -> parent.parent.parent is /backend
+BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+ROOT_DIR = BACKEND_DIR.parent
 
 
 class Settings(BaseSettings):
@@ -27,15 +33,25 @@ class Settings(BaseSettings):
     # Redis / Celery
     REDIS_URL: str = "redis://localhost:6379/0"
     
-    # File Paths & Directories
-    UPLOAD_DIR: str = os.path.join(os.getcwd(), "uploads")
-    PROCESSED_DIR: str = os.path.join(os.getcwd(), "processed")
-    REPORTS_DIR: str = os.path.join(os.getcwd(), "reports")
-    WEIGHTS_DIR: str = os.path.join(os.getcwd(), "weights")
+    # Base Path Objects
+    BASE_DIR: Path = BACKEND_DIR
+    PROJECT_ROOT: Path = ROOT_DIR
     
-    # YOLO Settings
-    YOLO_MODEL_PATH: str = os.path.join(WEIGHTS_DIR, "yolov11x-pothole.pt")
-    FALLBACK_YOLO_MODEL: str = os.path.join(WEIGHTS_DIR, "yolov8n-damage.pt")
+    # File Paths & Directories
+    UPLOAD_DIR: str = str(BACKEND_DIR / "uploads")
+    PROCESSED_DIR: str = str(BACKEND_DIR / "processed")
+    REPORTS_DIR: str = str(BACKEND_DIR / "reports")
+    WEIGHTS_DIR: str = str(BACKEND_DIR / "weights")
+    
+    # YOLO Model Filenames
+    DAMAGE_MODEL_NAME: str = "best.pt"
+    VEHICLE_MODEL_NAME: str = "yolov8n.pt"
+    HELMET_PLATE_MODEL_NAME: str = "helmet_numberplate.pt"
+    
+    # Backwards compatibility attributes
+    YOLO_MODEL_PATH: str = str(ROOT_DIR / "best.pt")
+    FALLBACK_YOLO_MODEL: str = str(ROOT_DIR / "yolov8n.pt")
+    
     CONFIDENCE_THRESHOLD: float = 0.35
     IOU_THRESHOLD: float = 0.45
     FRAME_SKIP: int = 5  # Process every 5th frame for performance
@@ -52,9 +68,30 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
+    def resolve_model_path(self, model_filename: str) -> Path:
+        """
+        Centralized model path resolver.
+        Searches candidate locations in order:
+        1. PROJECT_ROOT / model_filename
+        2. BACKEND_DIR / model_filename
+        3. WEIGHTS_DIR / model_filename
+        4. Current working directory / model_filename
+        Returns the first existing Path, or candidate path 1.
+        """
+        candidates = [
+            self.PROJECT_ROOT / model_filename,
+            self.BASE_DIR / model_filename,
+            Path(self.WEIGHTS_DIR) / model_filename,
+            Path.cwd() / model_filename,
+        ]
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return candidates[0]
+
 
 settings = Settings()
 
 # Ensure required local directories exist
-for path in [settings.UPLOAD_DIR, settings.PROCESSED_DIR, settings.REPORTS_DIR, settings.WEIGHTS_DIR]:
-    os.makedirs(path, exist_ok=True)
+for dir_path in [settings.UPLOAD_DIR, settings.PROCESSED_DIR, settings.REPORTS_DIR, settings.WEIGHTS_DIR]:
+    Path(dir_path).mkdir(parents=True, exist_ok=True)

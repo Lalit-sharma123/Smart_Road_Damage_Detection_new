@@ -125,23 +125,32 @@ class Detection(Base):
     __tablename__ = "detections"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    video_id: Mapped[str] = mapped_column(String(36), ForeignKey("videos.id", ondelete="CASCADE"), nullable=False)
-    frame_id: Mapped[str] = mapped_column(String(36), ForeignKey("frames.id", ondelete="CASCADE"), nullable=False)
+    video_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("videos.id", ondelete="CASCADE"), nullable=True)
+    camera_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("cameras.id", ondelete="SET NULL"), nullable=True)
+    frame_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("frames.id", ondelete="CASCADE"), nullable=True)
+    frame_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    timestamp_seconds: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     category: Mapped[DamageCategory] = mapped_column(Enum(DamageCategory), nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     
-    # Bounding Box Coordinates (Normalized 0.0 - 1.0 or pixel relative)
+    # Bounding Box Coordinates
     x_min: Mapped[float] = mapped_column(Float, nullable=False)
     y_min: Mapped[float] = mapped_column(Float, nullable=False)
     x_max: Mapped[float] = mapped_column(Float, nullable=False)
     y_max: Mapped[float] = mapped_column(Float, nullable=False)
-    area_pixels: Mapped[float] = mapped_column(Float, nullable=False)
+    area_pixels: Mapped[float] = mapped_column(Float, default=0.0)
     
-    severity: Mapped[SeverityLevel] = mapped_column(Enum(SeverityLevel), nullable=False)
-    severity_score: Mapped[float] = mapped_column(Float, nullable=False)
+    severity: Mapped[SeverityLevel] = mapped_column(Enum(SeverityLevel), default=SeverityLevel.LOW, nullable=False)
+    severity_score: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
+    distance_meters: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
 
-    video: Mapped["Video"] = relationship("Video", back_populates="detections")
-    frame: Mapped["Frame"] = relationship("Frame", back_populates="detections")
+    video: Mapped[Optional["Video"]] = relationship("Video", back_populates="detections")
+    frame: Mapped[Optional["Frame"]] = relationship("Frame", back_populates="detections")
 
 
 class GPSData(Base):
@@ -245,4 +254,43 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+
+
+class DriverSettings(Base):
+    __tablename__ = "driver_settings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    alert_distance_meters: Mapped[float] = mapped_column(Float, default=30.0, nullable=False)
+    voice_alerts_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    min_confidence: Mapped[float] = mapped_column(Float, default=0.35, nullable=False)
+    min_severity: Mapped[str] = mapped_column(String(50), default="low", nullable=False)
+    camera_source: Mapped[str] = mapped_column(String(255), default="0", nullable=False)
+    fps: Mapped[float] = mapped_column(Float, default=25.0, nullable=False)
+    frame_skip: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
+    camera_height_meters: Mapped[float] = mapped_column(Float, default=1.3, nullable=False)
+    camera_pitch_degrees: Mapped[float] = mapped_column(Float, default=15.0, nullable=False)
+    speed_kmh: Mapped[float] = mapped_column(Float, default=45.0, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+
+class DriverAlertLog(Base):
+    __tablename__ = "driver_alert_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    damage_category: Mapped[str] = mapped_column(String(100), nullable=False)
+    alert_level: Mapped[str] = mapped_column(String(50), nullable=False)  # low, medium, high, critical
+    distance_meters: Mapped[float] = mapped_column(Float, nullable=False)
+    lane_position: Mapped[str] = mapped_column(String(50), default="Center lane", nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, default=0.85)
+    severity_score: Mapped[float] = mapped_column(Float, default=0.7)
+    voice_message: Mapped[str] = mapped_column(Text, nullable=False)
+    latitude: Mapped[float] = mapped_column(Float, default=37.7749)
+    longitude: Mapped[float] = mapped_column(Float, default=-122.4194)
+    speed_kmh: Mapped[float] = mapped_column(Float, default=45.0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
 

@@ -13,6 +13,7 @@ import { ModelManagementView } from './components/ModelManagementView';
 import { UserManagementView } from './components/UserManagementView';
 import { CameraManagementView } from './components/CameraManagementView';
 import { CameraLiveGridView } from './components/CameraLiveGridView';
+import { DriverModeView } from './components/DriverModeView';
 import { BackendCodeViewer } from './components/BackendCodeViewer';
 import { SettingsView } from './components/SettingsView';
 import { sampleVideos } from './data/mockData';
@@ -277,6 +278,11 @@ export default function App() {
             currentRole={currentRole}
           />
         )}
+
+        {activeTab === 'driver_mode' && (
+          <DriverModeView />
+        )}
+
 
         {activeTab === 'camera_grid' && (
           <CameraLiveGridView

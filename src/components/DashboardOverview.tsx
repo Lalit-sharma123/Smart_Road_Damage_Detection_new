@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { InspectionVideo, UserRole } from '../types/inspection';
 import { apiClient } from '../services/apiClient';
+import { YOLOModelMonitor } from './YOLOModelMonitor';
 
 interface DashboardSummaryData {
   total_inspections: number;
@@ -330,6 +331,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </p>
         </div>
       </div>
+
+      {/* Real-Time Multi-Model YOLO Latency & Throughput Monitor */}
+      <YOLOModelMonitor />
 
       {/* Road Damage Breakdown & Vehicle Class Breakdown Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 font-mono">

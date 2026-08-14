@@ -11,6 +11,22 @@ from app.schemas.schemas import AIModelCreate, AIModelResponse
 router = APIRouter(prefix="/models", tags=["AI Model Management"])
 
 
+@router.get("/telemetry")
+async def get_models_telemetry():
+    """
+    GET /api/v1/models/telemetry
+    Returns real-time inference latency (ms), throughput (FPS), active status,
+    and performance metrics for the three active YOLO models.
+    """
+    from app.services.camera_manager import detector_instance
+    telemetry_data = detector_instance.get_models_telemetry()
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "total_active_models": len(telemetry_data),
+        "models": telemetry_data
+    }
+
+
 @router.get("", response_model=List[AIModelResponse])
 async def list_ai_models(db: AsyncSession = Depends(get_db)):
     """

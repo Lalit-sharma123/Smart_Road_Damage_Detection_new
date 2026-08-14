@@ -17,6 +17,8 @@ from app.api.cameras import router as cameras_router
 from app.api.models_api import router as models_router
 from app.api.users_api import router as users_router
 from app.api.logs import router as logs_router
+from app.driver.routes import router as driver_router
+from app.api.ws_routes import router as ws_router
 
 
 @asynccontextmanager
@@ -98,7 +100,9 @@ app.mount("/static/reports", StaticFiles(directory=settings.REPORTS_DIR), name="
 # Include API Routers under /api/v1
 app.include_router(auth_router, prefix=settings.API_V1_STR)
 app.include_router(video_router, prefix=settings.API_V1_STR)
+app.include_router(video_router)  # Allow direct /videos/upload
 app.include_router(process_router, prefix=settings.API_V1_STR)
+app.include_router(process_router)  # Allow direct /process/run
 app.include_router(report_router, prefix=settings.API_V1_STR)
 app.include_router(analytics_router, prefix=settings.API_V1_STR)
 app.include_router(dashboard_router, prefix=settings.API_V1_STR)
@@ -106,6 +110,10 @@ app.include_router(cameras_router, prefix=settings.API_V1_STR)
 app.include_router(models_router, prefix=settings.API_V1_STR)
 app.include_router(users_router, prefix=settings.API_V1_STR)
 app.include_router(logs_router, prefix=settings.API_V1_STR)
+app.include_router(driver_router, prefix=settings.API_V1_STR)
+app.include_router(driver_router)  # Allow direct /driver/start-camera & /driver/stop-camera
+app.include_router(ws_router, prefix=settings.API_V1_STR)
+app.include_router(ws_router)  # Allow direct /ws/live-detections, /ws/dashboard, /processing/status, /processing/live
 
 
 @app.get("/", tags=["Health Check"])

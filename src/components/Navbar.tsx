@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { 
   ShieldAlert, 
+  Car,
   Video, 
   Radio,
   Crosshair, 
@@ -67,6 +68,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: ShieldAlert, roles: ['super_admin', 'admin', 'operator', 'inspector', 'viewer'] },
+    { id: 'driver_mode', label: 'Driver Mode', icon: Car, roles: ['super_admin', 'admin', 'operator', 'inspector', 'viewer'] },
     { id: 'camera_grid', label: 'Live Matrix', icon: Tv, roles: ['super_admin', 'admin', 'operator', 'inspector', 'viewer'] },
     { id: 'cameras', label: 'Camera Registry', icon: Camera, roles: ['super_admin', 'admin', 'operator', 'inspector'] },
     { id: 'upload', label: 'Video Upload', icon: Video, roles: ['super_admin', 'admin', 'operator', 'inspector'] },

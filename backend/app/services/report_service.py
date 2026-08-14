@@ -63,11 +63,11 @@ class ReportGenerationService:
         with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
             # Sheet 1: Summary KPIs
             df_summary = pd.DataFrame([summary_data])
-            df_summary.to_excel(writer, sheet_index=0, sheet_name="Executive Summary", index=False)
+            df_summary.to_excel(writer, sheet_name="Executive Summary", index=False)
 
             # Sheet 2: Raw Detection Logs
             df_det = pd.DataFrame(detections)
-            df_det.to_excel(writer, sheet_index=1, sheet_name="Detections Log", index=False)
+            df_det.to_excel(writer, sheet_name="Detections Log", index=False)
 
         return file_path
 
