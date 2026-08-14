@@ -150,93 +150,106 @@ async def execute_video_processing_task(
 
                 has_damage = len(raw_detections) > 0
 
-                # DB Frame record
-                db_frame = Frame(
-                    video_id=video.id,
-                    frame_number=frame_num,
-                    timestamp_seconds=timestamp_sec,
-                    image_path="",
-                    has_damage=has_damage
-                )
-                db.add(db_frame)
-                await db.flush()
-
-                # Calculate progress and ETA
-                current_progress = min(99, max(1, int((frame_num / max(1, total_expected_frames)) * 100)))
-                calc_fps = round(float(processor.fps or 30.0), 1)
-                remaining_frames = max(0, total_expected_frames - frame_num)
-                eta_sec = int(remaining_frames / max(1.0, calc_fps))
-
-                processing_progress_state["is_processing"] = True
-                processing_progress_state["video_id"] = video.id
-                processing_progress_state["current_frame"] = frame_num
-                processing_progress_state["total_frames"] = total_expected_frames
-                processing_progress_state["progress_percent"] = current_progress
-                processing_progress_state["current_fps"] = calc_fps
-                processing_progress_state["estimated_time_remaining_sec"] = eta_sec
-                processing_progress_state["status"] = f"Processing frame {frame_num}/{total_expected_frames} ({current_progress}%)"
-
-                # Process detections with severity formula
-                frame_detections = []
-                for det in raw_detections:
-                    sev_level, sev_score = SeverityAnalysisService.calculate_detection_severity(
-                        det,
-                        frame_width=processor.width,
-                        frame_height=processor.height,
-                        cluster_count=len(raw_detections)
-                    )
-
-                    cat_val = det["category"]
-                    if hasattr(cat_val, "value"):
-                        cat_enum = cat_val
-                    else:
-                        try:
-                            cat_enum = DamageCategory(cat_val)
-                        except ValueError:
-                            cat_enum = DamageCategory.POTHOLE
-
-                    # Distance estimation
-                    distance_est = SeverityAnalysisService.estimate_perspective_distance(
-                        det,
-                        frame_height=processor.height
-                    )
-
-                    base_lat = 28.4595 + (frame_num * 0.00008)
-                    base_lon = 77.0266 + (frame_num * 0.00009)
-
-                    db_detection = Detection(
+                # DB Frame and Detection persistence
+                try:
+                    db_frame = Frame(
                         video_id=video.id,
-                        frame_id=db_frame.id,
                         frame_number=frame_num,
                         timestamp_seconds=timestamp_sec,
-                        category=cat_enum,
-                        confidence=det["confidence"],
-                        x_min=det["x_min"],
-                        y_min=det["y_min"],
-                        x_max=det["x_max"],
-                        y_max=det["y_max"],
-                        area_pixels=det["area_pixels"],
-                        severity=sev_level,
-                        severity_score=sev_score,
-                        distance_meters=distance_est,
-                        latitude=base_lat,
-                        longitude=base_lon
+                        image_path="",
+                        has_damage=has_damage
                     )
-                    db.add(db_detection)
+                    db.add(db_frame)
+                    await db.flush()
 
-                    det_record = {
-                        "category": cat_enum.value,
-                        "confidence": det["confidence"],
-                        "severity": sev_level.value,
-                        "severity_score": sev_score,
-                        "x_min": det["x_min"],
-                        "y_min": det["y_min"],
-                        "x_max": det["x_max"],
-                        "y_max": det["y_max"],
-                        "distance_meters": distance_est
-                    }
-                    frame_detections.append(det_record)
-                    all_detections_list.append(det_record)
+                    for det in raw_detections:
+                        sev_level, sev_score = SeverityAnalysisService.calculate_detection_severity(
+                            det,
+                            frame_width=processor.width,
+                            frame_height=processor.height,
+                            cluster_count=len(raw_detections)
+                        )
+
+                        cat_val = det["category"]
+                        if hasattr(cat_val, "value"):
+                            cat_enum = cat_val
+                        else:
+                            try:
+                                cat_enum = DamageCategory(cat_val)
+                            except ValueError:
+                                cat_enum = DamageCategory.POTHOLE
+
+                        distance_est = SeverityAnalysisService.estimate_perspective_distance(
+                            det,
+                            frame_height=processor.height
+                        )
+
+                        base_lat = 28.4595 + (frame_num * 0.00008)
+                        base_lon = 77.0266 + (frame_num * 0.00009)
+
+                        db_detection = Detection(
+                            video_id=video.id,
+                            camera_id=None,
+                            frame_id=db_frame.id,
+                            frame_number=frame_num,
+                            timestamp_seconds=timestamp_sec,
+                            category=cat_enum,
+                            confidence=det["confidence"],
+                            x_min=det["x_min"],
+                            y_min=det["y_min"],
+                            x_max=det["x_max"],
+                            y_max=det["y_max"],
+                            area_pixels=det["area_pixels"],
+                            severity=sev_level,
+                            severity_score=sev_score,
+                            distance_meters=distance_est,
+                            latitude=base_lat,
+                            longitude=base_lon
+                        )
+                        db.add(db_detection)
+
+                        det_record = {
+                            "category": cat_enum.value,
+                            "confidence": det["confidence"],
+                            "severity": sev_level.value,
+                            "severity_score": sev_score,
+                            "x_min": det["x_min"],
+                            "y_min": det["y_min"],
+                            "x_max": det["x_max"],
+                            "y_max": det["y_max"],
+                            "distance_meters": distance_est
+                        }
+                        frame_detections.append(det_record)
+                        all_detections_list.append(det_record)
+                except Exception as db_err:
+                    print(f"⚠️ [Frame Persistence Warning]: {db_err}")
+                    # Still record in memory for video report & telemetry
+                    for det in raw_detections:
+                        sev_level, sev_score = SeverityAnalysisService.calculate_detection_severity(
+                            det,
+                            frame_width=processor.width,
+                            frame_height=processor.height,
+                            cluster_count=len(raw_detections)
+                        )
+                        cat_val = det.get("category", "POTHOLE")
+                        cat_str = cat_val.value if hasattr(cat_val, "value") else str(cat_val)
+                        distance_est = SeverityAnalysisService.estimate_perspective_distance(
+                            det,
+                            frame_height=processor.height
+                        )
+                        det_record = {
+                            "category": cat_str,
+                            "confidence": det["confidence"],
+                            "severity": sev_level.value,
+                            "severity_score": sev_score,
+                            "x_min": det["x_min"],
+                            "y_min": det["y_min"],
+                            "x_max": det["x_max"],
+                            "y_max": det["y_max"],
+                            "distance_meters": distance_est
+                        }
+                        frame_detections.append(det_record)
+                        all_detections_list.append(det_record)
 
                 # Annotate Frame with bounding boxes
                 annotated_img = raw_frame.copy()
@@ -432,3 +445,21 @@ async def process_video_pipeline(
         "total_detections_found": 0,
         "road_health_score": 100.0
     }
+
+
+@router.get("/status")
+async def get_pipeline_processing_status():
+    """
+    Returns the live status of the AI video processing pipeline.
+    """
+    return {
+        "is_processing": processing_progress_state.get("is_processing", False),
+        "video_id": processing_progress_state.get("video_id"),
+        "current_frame": processing_progress_state.get("current_frame", 0),
+        "total_frames": processing_progress_state.get("total_frames", 0),
+        "progress_percent": processing_progress_state.get("progress_percent", 0),
+        "current_fps": processing_progress_state.get("current_fps", 30.0),
+        "estimated_time_remaining_sec": processing_progress_state.get("estimated_time_remaining_sec", 0),
+        "status": processing_progress_state.get("status", "idle")
+    }
+

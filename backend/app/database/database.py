@@ -172,21 +172,34 @@ async def ensure_schema_alignment(conn) -> None:
 
         for table_name, columns in REQUIRED_SCHEMA.items():
             if is_pg:
-                # PostgreSQL: Query existing column names
+                # PostgreSQL: Query existing column names, data types and udt_names
                 query = text("""
-                    SELECT column_name 
+                    SELECT column_name, data_type, udt_name 
                     FROM information_schema.columns 
                     WHERE table_name = :table_name
                 """)
                 res = await conn.execute(query, {"table_name": table_name})
-                existing_cols = {row[0].lower() for row in res.fetchall()}
+                col_info = {row[0].lower(): (row[1].lower(), row[2].lower()) for row in res.fetchall()}
 
-                if existing_cols:  # Table exists
+                if col_info:  # Table exists
                     for col_name, pg_ddl, _ in columns:
-                        if col_name.lower() not in existing_cols:
+                        col_lower = col_name.lower()
+                        if col_lower not in col_info:
                             alter_stmt = text(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {col_name} {pg_ddl}")
                             await conn.execute(alter_stmt)
                             print(f"🔧 [PostgreSQL Auto-Migration] Added column '{col_name}' to '{table_name}'")
+                        else:
+                            curr_type, udt_type = col_info[col_lower]
+                            # Detect data type mismatches for string UUIDs (e.g. camera_id, video_id, frame_id, uploader_id)
+                            if "varchar" in pg_ddl.lower() and ("int" in curr_type or "int" in udt_type or "numeric" in curr_type):
+                                try:
+                                    # Drop default if any
+                                    await conn.execute(text(f"ALTER TABLE {table_name} ALTER COLUMN {col_name} DROP DEFAULT"))
+                                    # Alter column type to VARCHAR(36)
+                                    await conn.execute(text(f"ALTER TABLE {table_name} ALTER COLUMN {col_name} TYPE VARCHAR(36) USING {col_name}::VARCHAR"))
+                                    print(f"🔧 [PostgreSQL Auto-Migration] Converted '{table_name}.{col_name}' from {curr_type} to VARCHAR(36)")
+                                except Exception as type_err:
+                                    print(f"⚠️ Note migrating {table_name}.{col_name} type: {type_err}")
             else:
                 # SQLite: Query existing column names via PRAGMA
                 try:

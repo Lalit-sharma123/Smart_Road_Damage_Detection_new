@@ -126,6 +126,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 # Mount Static Media Files (Uploads, Processed frames, Reports)
+app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads_direct")
 app.mount("/processed", StaticFiles(directory=settings.PROCESSED_DIR), name="processed_direct")
 app.mount("/static/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 app.mount("/static/processed", StaticFiles(directory=settings.PROCESSED_DIR), name="processed")
