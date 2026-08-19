@@ -59,6 +59,7 @@ class YOLODamageDetector:
             },
             "vehicle": {
                 "key": "vehicle",
+                
                 "name": "Vehicle Classification Engine",
                 "filename": settings.VEHICLE_MODEL_NAME,
                 "type": "Traffic Volume & Vehicles",

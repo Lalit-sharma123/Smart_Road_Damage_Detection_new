@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = ["*"]
     
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgrespassword@localhost:5432/road_damage_db"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/road_damage_db"
     
     # Redis / Celery
     REDIS_URL: str = "redis://localhost:6379/0"
